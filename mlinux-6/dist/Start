@@ -1,0 +1,10 @@
+#!/bin/bash
+# Start script for webapi-example
+# This script is called by app-manager to start the application
+
+APP_DIR="$(dirname "$0")"
+export APP_DIR
+export PYTHONPATH="${APP_DIR}/webapi_example:${PYTHONPATH}"
+
+cd "$APP_DIR"
+exec /usr/bin/python3 -m webapi_example -c "${APP_DIR}/config/config.json"

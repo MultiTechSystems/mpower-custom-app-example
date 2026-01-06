@@ -1,0 +1,11 @@
+#!/bin/bash
+# Installation script for webapi-example
+# This script runs after the tarball is extracted
+
+echo "Installing webapi-example..."
+
+# Nothing special needed - files are extracted in place
+# Add any post-installation steps here if needed
+
+echo "Installation complete"
+exit 0
