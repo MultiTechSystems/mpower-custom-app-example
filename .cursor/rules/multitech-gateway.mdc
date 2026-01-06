@@ -6,6 +6,17 @@ alwaysApply: false
 
 # MultiTech Conduit Gateway Development
 
+## API Documentation
+
+**mPower REST API Reference**: https://multitechsystems.github.io/mpower-api
+
+This documentation covers all gateway REST API endpoints including:
+- Authentication and session management
+- Firewall configuration
+- Custom app management
+- Network settings
+- LoRa configuration
+
 ## Platform Requirements
 
 - **mLinux 6**: Python 3.8 - use `List`, `Dict`, `Optional` type hints
