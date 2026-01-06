@@ -2,11 +2,11 @@
 
 import argparse
 import logging
+import os
 import signal
 import sys
 from types import FrameType
 
-from webapi_example.app import create_app, init_db
 from webapi_example.utils.config_loader import load_config
 from webapi_example.utils.logging_setup import setup_logging
 from webapi_example.utils.status_writer import StatusWriter
@@ -59,31 +59,28 @@ def main() -> None:
     _status_writer.start()
     _status_writer.set_status("Initializing")
 
-    # Create and initialize application
-    app = create_app(config)
-    init_db(app)
+    # Get database path
+    app_dir = os.environ.get("APP_DIR", ".")
+    db_path = os.path.join(app_dir, config.database.path)
 
     # Update status
     _status_writer.set_status(f"Running on {config.server.host}:{config.server.port}")
 
     try:
-        # Run the Flask development server
-        # Note: In production, use a proper WSGI server like gunicorn
+        # Import and run the stdlib-based server (no Flask dependency)
+        from webapi_example.server import run_server
         logger.info(
             "Starting server on %s:%d", config.server.host, config.server.port
         )
-        app.run(
-            host=config.server.host,
-            port=config.server.port,
-            debug=config.server.debug,
-            use_reloader=False,  # Disable reloader for production
-        )
+        run_server(config, db_path)
     except Exception as e:
         logger.error("Application error: %s", e)
-        _status_writer.set_status(f"Error: {e}")
+        if _status_writer:
+            _status_writer.set_status(f"Error: {e}")
         raise
     finally:
-        _status_writer.stop()
+        if _status_writer:
+            _status_writer.stop()
 
 
 if __name__ == "__main__":

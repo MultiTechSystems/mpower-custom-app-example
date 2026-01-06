@@ -1,11 +1,6 @@
 {
-  "name": "webapi-example",
-  "version": "1.0.0",
-  "description": "Web API Example - A simple REST API for mPower gateways",
-  "start": "/usr/bin/python3 -m webapi_example",
-  "stop": "",
-  "restart": "always",
-  "config": {
-    "file": "config/config.json"
-  }
+  "AppName": "webapi_example",
+  "AppVersion": "1.0.0",
+  "AppDescription": "Web API Example - A simple REST API for mPower gateways",
+  "AppVersionNotes": "Initial release for mLinux 7 (Python 3.10)"
 }
