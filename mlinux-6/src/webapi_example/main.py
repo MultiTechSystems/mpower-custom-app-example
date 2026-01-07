@@ -67,19 +67,26 @@ def main() -> None:
     init_db(app)
 
     # Update status
-    _status_writer.set_status(f"Running on {config.server.host}:{config.server.port}")
+    protocol = "https" if config.server.tls.enabled else "http"
+    _status_writer.set_status(f"Running on {config.server.host}:{config.server.port} ({protocol})")
 
     try:
-        # Run the Flask development server
-        # Note: In production, use a proper WSGI server like gunicorn
+        # Configure SSL context if TLS is enabled
+        ssl_context = None
+        if config.server.tls.enabled:
+            ssl_context = (config.server.tls.cert_file, config.server.tls.key_file)
+            logger.info("TLS enabled with cert: %s", config.server.tls.cert_file)
+
+        protocol = "https" if config.server.tls.enabled else "http"
         logger.info(
-            "Starting server on %s:%d", config.server.host, config.server.port
+            "Starting server on %s://%s:%d", protocol, config.server.host, config.server.port
         )
         app.run(
             host=config.server.host,
             port=config.server.port,
             debug=config.server.debug,
             use_reloader=False,  # Disable reloader for production
+            ssl_context=ssl_context,
         )
     except Exception as e:
         logger.error("Application error: %s", e)

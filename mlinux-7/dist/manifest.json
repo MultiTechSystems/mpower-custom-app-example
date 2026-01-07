@@ -1,6 +1,6 @@
 {
   "AppName": "webapi_example",
-  "AppVersion": "1.0.3",
+  "AppVersion": "1.0.4",
   "AppDescription": "Web API Example - A simple REST API for mPower gateways",
-  "AppVersionNotes": "Bundle python3-sqlite3 dependency via provisioning, firewall port opening on install"
+  "AppVersionNotes": "Add configurable TLS/HTTPS support"
 }

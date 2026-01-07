@@ -3,7 +3,7 @@
 set -e
 
 APP_NAME="webapi_example"
-VERSION="1.0.3"
+VERSION="1.0.4"
 MLINUX_VERSION="mlinux7"
 TARBALL_NAME="${APP_NAME}-${VERSION}-${MLINUX_VERSION}.tar.gz"
 

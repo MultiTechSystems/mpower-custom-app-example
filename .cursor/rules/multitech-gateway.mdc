@@ -485,3 +485,47 @@ If tar shows "Permission denied" and "Cannot change mode" warnings:
 | Start app | `curl -k -b cookies.txt -X POST "https://{IP}/api/customApps/{ID}/start" -H "Content-Length: 0"` |
 | Enable custom apps | `curl -k -b cookies.txt -X PUT "https://{IP}/api/customAppsConfig" -H "Content-Type: application/json" -d '{"enabled":true}'` |
 | Save and apply config | `curl -k -b cookies.txt -X POST "https://{IP}/api/command/save_apply" -H "Content-Length: 0"` |
+
+## Deployment Best Practices
+
+**IMPORTANT**: Always use the REST API for app installation and updates, not SSH/SCP extraction. The API method:
+- Handles permissions correctly
+- Runs Install script properly
+- Registers app with app-manager
+- Creates firewall rules via postinstall
+
+SSH extraction into `/var/config/app/{app_name}` will fail with permission denied errors.
+
+### Preferred Deployment Method (API)
+
+```bash
+# 1. Login
+curl -k -s -c cookies.txt -X POST "https://{IP}/api/login" \
+  -H "Content-Type: application/json" \
+  -d '{"username":"admin","password":"yourpassword"}'
+
+# 2. Stop existing app (if updating)
+curl -k -s -b cookies.txt -X POST "https://{IP}/api/customApps/{ID}/stop" -H "Content-Length: 0"
+
+# 3. Delete existing app (if updating)
+curl -k -s -b cookies.txt -X DELETE "https://{IP}/api/customApps/{ID}"
+
+# 4. Pre-upload
+FILESIZE=$(stat -c%s {tarball}.tar.gz)
+curl -k -s -b cookies.txt -X POST "https://{IP}/api/command/app_pre_upload" \
+  -H "Content-Type: application/json" \
+  -d "{\"info\":{\"fileName\":\"{tarball}.tar.gz\",\"fileSize\":$FILESIZE}}"
+
+# 5. Upload
+curl -k -s -b cookies.txt -X POST "https://{IP}/api/command/app_upload" \
+  -F "archivo=@{tarball}.tar.gz;filename={tarball}.tar.gz;type=application/x-gzip"
+
+# 6. Install
+curl -k -s -b cookies.txt -X POST "https://{IP}/api/command/app_install" \
+  -H "Content-Type: application/json" \
+  -d '{"info":{"appId":"{ID}","appFile":"{tarball}.tar.gz"}}'
+
+# 7. Save and verify
+curl -k -s -b cookies.txt -X POST "https://{IP}/api/command/save" -H "Content-Length: 0"
+curl -k -s -b cookies.txt "https://{IP}/api/customApps"
+```

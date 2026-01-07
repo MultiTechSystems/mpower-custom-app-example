@@ -4,6 +4,7 @@ import json
 import logging
 import os
 import sqlite3
+import ssl
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from typing import Any
 from urllib.parse import parse_qs, urlparse
@@ -290,9 +291,28 @@ def init_db(db_path: str) -> None:
 
 
 def run_server(config: AppConfig, db_path: str) -> None:
-    """Run the HTTP server."""
+    """Run the HTTP server with optional TLS support."""
     init_db(db_path)
     handler = create_handler(config, db_path)
     server = HTTPServer((config.server.host, config.server.port), handler)
-    logger.info("Server running on %s:%d", config.server.host, config.server.port)
+
+    if config.server.tls.enabled:
+        # Create SSL context for TLS
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        try:
+            context.load_cert_chain(
+                certfile=config.server.tls.cert_file,
+                keyfile=config.server.tls.key_file,
+            )
+            server.socket = context.wrap_socket(server.socket, server_side=True)
+            logger.info("TLS enabled with cert: %s", config.server.tls.cert_file)
+        except FileNotFoundError as e:
+            logger.error("TLS certificate not found: %s", e)
+            raise
+        except ssl.SSLError as e:
+            logger.error("TLS configuration error: %s", e)
+            raise
+
+    protocol = "https" if config.server.tls.enabled else "http"
+    logger.info("Server running on %s://%s:%d", protocol, config.server.host, config.server.port)
     server.serve_forever()

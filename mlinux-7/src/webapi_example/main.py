@@ -64,7 +64,8 @@ def main() -> None:
     db_path = os.path.join(app_dir, config.database.path)
 
     # Update status
-    _status_writer.set_status(f"Running on {config.server.host}:{config.server.port}")
+    protocol = "https" if config.server.tls.enabled else "http"
+    _status_writer.set_status(f"Running on {config.server.host}:{config.server.port} ({protocol})")
 
     try:
         # Import and run the stdlib-based server (no Flask dependency)

@@ -7,6 +7,37 @@ from typing import Any, Dict
 
 
 @dataclass
+class TlsConfig:
+    """TLS/SSL configuration.
+
+    Attributes:
+        enabled: Enable TLS/HTTPS.
+        cert_file: Path to certificate file (PEM format).
+        key_file: Path to private key file (PEM format).
+    """
+
+    enabled: bool = False
+    cert_file: str = "/var/config/server.pem"
+    key_file: str = "/var/config/server.pem"
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> TlsConfig:
+        """Create TlsConfig from dictionary.
+
+        Args:
+            data: Configuration dictionary.
+
+        Returns:
+            TlsConfig instance.
+        """
+        return cls(
+            enabled=data.get("enabled", False),
+            cert_file=data.get("cert_file", "/var/config/server.pem"),
+            key_file=data.get("key_file", "/var/config/server.pem"),
+        )
+
+
+@dataclass
 class ServerConfig:
     """HTTP server configuration.
 
@@ -14,11 +45,13 @@ class ServerConfig:
         host: Host address to bind to.
         port: Port number to listen on.
         debug: Enable debug mode.
+        tls: TLS/SSL configuration.
     """
 
     host: str = "0.0.0.0"
     port: int = 5000
     debug: bool = False
+    tls: TlsConfig = field(default_factory=TlsConfig)
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> ServerConfig:
@@ -34,6 +67,7 @@ class ServerConfig:
             host=data.get("host", "0.0.0.0"),
             port=data.get("port", 5000),
             debug=data.get("debug", False),
+            tls=TlsConfig.from_dict(data.get("tls", {})),
         )
 
 
