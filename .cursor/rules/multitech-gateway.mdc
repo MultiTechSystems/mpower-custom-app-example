@@ -17,6 +17,8 @@ This documentation covers all gateway REST API endpoints including:
 - Network settings
 - LoRa configuration
 
+**Important**: Always check the API documentation for correct endpoint paths. Do not guess API paths.
+
 ## Platform Requirements
 
 - **mLinux 6**: Python 3.8 - use `List`, `Dict`, `Optional` type hints
@@ -149,9 +151,211 @@ Include in tarball:
 - Start
 - status.json
 - config/
-- src/
+- provisioning/ (if bundling IPK packages)
+- {app_name}/ (Python source files)
 
 Output format: `{app_name}-{version}-mlinux{6|7}.tar.gz`
+
+## Install Script Requirements
+
+The `Install` script handles dependency installation and removal. App-manager calls this script with different arguments during the app lifecycle.
+
+### Required Case Statement
+
+```bash
+case "$1" in
+    install)      # Install dependencies from provisioning/
+    remove)       # Remove dependencies (usually skip shared packages)
+    postinstall)  # Post-install tasks (firewall rules, directories, etc.)
+    postremove)   # Post-remove cleanup
+esac
+```
+
+### Provisioning Manifest Format
+
+Create `provisioning/p_manifest.json`:
+
+```json
+{
+  "pkgs": [
+    {
+      "FileName": "python3-sqlite3_3.10.15-r0.0_cortexa7t2hf-neon.ipk",
+      "PkgName": "python3-sqlite3",
+      "type": "ipk"
+    }
+  ]
+}
+```
+
+### Install Package Loop
+
+```bash
+OPKG_CMD_PREFIX="opkg install --force-depends ./provisioning/"
+MANIFEST="./provisioning/p_manifest.json"
+
+if [ -f "$MANIFEST" ]; then
+    JSONTXT=$(<./provisioning/p_manifest.json)
+    PKGCNT=$(echo $JSONTXT | jsparser --count -p /pkgs 2>/dev/null)
+    
+    for ((i=0; i < PKGCNT; i++)); do
+        PKG=$(echo $JSONTXT | jsparser --jsobj -p /pkgs/$i 2>/dev/null)
+        PKGNM=$(echo $PKG | jsparser -p /FileName 2>/dev/null)
+        PKGTYPE=$(echo $PKG | jsparser -p /type 2>/dev/null)
+        
+        if [ "$PKGTYPE" == "ipk" ] && [ -f "./provisioning/$PKGNM" ]; then
+            PKGCMD=$OPKG_CMD_PREFIX$PKGNM
+            eval $PKGCMD
+        fi
+    done
+fi
+```
+
+## Start Script Requirements
+
+The `Start` script is called by app-manager to manage the application process.
+
+**CRITICAL**: Do not call app-manager from within the Start script. App-manager calls this script directly - calling app-manager back causes lock issues and hangs.
+
+### Required Functions
+
+| Function | Purpose |
+|----------|---------|
+| `SetEnv` | Set environment variables (PYTHONPATH, etc.) |
+| `CreateAccess` | Create necessary directories |
+| `ChangeUser` | Switch user if needed (usually root) |
+| `Execute` | Start the process using start-stop-daemon |
+| `Start` | Calls SetEnv, CreateAccess, ChangeUser, Execute |
+| `Stop` | Stop the process using start-stop-daemon |
+| `Restart` | Stop then Start |
+| `Reload` | Restart to pick up new configuration |
+
+### Required Case Statement
+
+```bash
+case "$1" in
+    start)    Start ;;
+    stop)     Stop ;;
+    restart)  Restart ;;
+    reload)   Reload ;;
+esac
+```
+
+### Environment Variables from App-Manager
+
+| Variable | Description |
+|----------|-------------|
+| `APP_DIR` | Application directory: `/var/config/app/{app_name}` |
+| `CONFIG_DIR` | Config directory: `/var/config/app/{app_name}/config` |
+| `APP_ID` | Numeric app ID assigned by app-manager |
+
+### Execute Function Template
+
+```bash
+function Execute {
+    # Determine config file location
+    if [ -f "$CONFIG_DIR/config.json" ]; then
+        CONFIG_ARG="-c $CONFIG_DIR/config.json"
+    elif [ -f "$APP_DIR/config/config.json" ]; then
+        CONFIG_ARG="-c $APP_DIR/config/config.json"
+    else
+        CONFIG_ARG=""
+    fi
+    
+    # Start the application using start-stop-daemon
+    /usr/sbin/start-stop-daemon --start --background \
+        --pidfile "$PID" --make-pidfile \
+        --startas /bin/bash -- -c "cd $APP_DIR && exec python3 -m {app_name} $CONFIG_ARG >> $LOG_FILE 2>&1"
+    
+    logger -t Start "{app_name} started"
+}
+```
+
+### Stop Function Template
+
+```bash
+function Stop {
+    /usr/sbin/start-stop-daemon --stop -p "$PID" --retry 60
+    rm -f "$PID"
+    logger -t Start "{app_name} stopped"
+}
+```
+
+## Custom Apps Configuration API
+
+To enable/disable custom apps via API:
+
+```bash
+# Get current config
+curl -k -s -b /tmp/cookies.txt "https://{IP}/api/customAppsConfig"
+
+# Enable custom apps
+curl -k -s -b /tmp/cookies.txt -X PUT "https://{IP}/api/customAppsConfig" \
+  -H "Content-Type: application/json" \
+  -d '{"enabled":true}'
+
+# Save configuration
+curl -k -s -b /tmp/cookies.txt -X POST "https://{IP}/api/command/save" -H "Content-Length: 0"
+```
+
+Configuration options:
+- `enabled`: Enable/disable custom apps
+- `allowed`: Allow custom app installation
+- `backupOnInstall`: Backup before installing new apps
+
+## Firewall Rules via API
+
+Create firewall rules programmatically using `/api/filters`. Rules require the `__v` version field.
+
+### Create Firewall Rule
+
+```bash
+# Create INPUT rule to allow TCP port 5000
+curl -k -s -b /tmp/cookies.txt -X POST "https://{IP}/api/filters" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "__v": 2,
+    "name": "webapi_example_port_5000",
+    "description": "Allow inbound TCP to webapi_example port 5000",
+    "enabled": true,
+    "chain": "INPUT",
+    "target": "ACCEPT",
+    "protocol": "TCP",
+    "srcAddr": "ANY",
+    "srcMask": "",
+    "srcPort": "ANY",
+    "dstAddr": "ANY",
+    "dstMask": "",
+    "dstPort": "5000",
+    "srcInterface": "ANY",
+    "dstInterface": "ANY",
+    "srcSpecInterface": "",
+    "dstSpecInterface": "",
+    "srcMac": "ANY"
+  }'
+
+# Save AND apply configuration (required to activate iptables rules)
+curl -k -s -b /tmp/cookies.txt -X POST "https://{IP}/api/command/save_apply" \
+  -H "Content-Length: 0"
+```
+
+**Important**:
+- The `__v` field is required. Use `__v: 2` for current mLinux 7 firmware
+- After creating/modifying firewall rules, you MUST call `/api/command/save_apply` to persist AND activate the rules
+- `/api/command/save` alone only persists to config - rules won't be active until `save_apply` or reboot
+- From localhost (127.0.0.1), API requests work without authentication (useful in Install scripts)
+
+### Delete Firewall Rule
+
+```bash
+curl -k -s -b /tmp/cookies.txt -X DELETE "https://{IP}/api/filters/{rule_name}"
+curl -k -s -b /tmp/cookies.txt -X POST "https://{IP}/api/command/save_apply" -H "Content-Length: 0"
+```
+
+### List Firewall Rules
+
+```bash
+curl -k -s -b /tmp/cookies.txt "https://{IP}/api/filters"
+```
 
 ## Deployment Commands
 
@@ -245,46 +449,6 @@ sleep 2
 curl -k -s -b /tmp/cookies.txt -X POST "https://{IP}/api/customApps/{ID}/start" -H "Content-Length: 0"
 ```
 
-## Update Configuration via SSH
-
-```bash
-# Write new config
-cat << 'CONFIGEOF' | sshpass -p 'yourpassword' ssh admin@{IP} \
-  "cat > /var/config/app/{app_name}/config/config.json"
-{
-  "key": "value"
-}
-CONFIGEOF
-
-# Restart app
-curl -k -s -b /tmp/cookies.txt -X POST "https://{IP}/api/customApps/{ID}/stop" -H "Content-Length: 0"
-sleep 2
-curl -k -s -b /tmp/cookies.txt -X POST "https://{IP}/api/customApps/{ID}/start" -H "Content-Length: 0"
-```
-
-## Copy Single File Update
-
-```bash
-# Copy single file
-sshpass -p 'yourpassword' scp mlinux-7/src/{app_name}/bridge.py \
-  admin@{IP}:/var/config/app/{app_name}/{app_name}/bridge.py
-
-# Restart
-curl -k -s -b /tmp/cookies.txt -X POST "https://{IP}/api/customApps/{ID}/stop" -H "Content-Length: 0"
-sleep 2
-curl -k -s -b /tmp/cookies.txt -X POST "https://{IP}/api/customApps/{ID}/start" -H "Content-Length: 0"
-```
-
-## Synchronizing Platform Versions
-
-When updating code, sync changes across all platform versions:
-
-1. Implement in `mlinux-7/src` first (Python 3.10)
-2. Copy to `mlinux-6/src` and adjust type hints for Python 3.8
-3. Copy to `ubuntu/src` (uses Python 3.10+ syntax)
-4. Rebuild tarballs for mlinux-6 and mlinux-7
-5. Run tests on all versions
-
 ## Troubleshooting
 
 ### App Won't Start
@@ -298,29 +462,16 @@ If getting "401 not logged in" when trying to stop/start app via API:
 - Use cookie jar (`-c` to save, `-b` to use) instead of Bearer token
 - Ensure login succeeded before subsequent calls
 
+### App-Manager Lock Issues
+If getting "Failed to acquire lock on file" when using app-manager:
+- Check if Start script is calling app-manager (it should NOT)
+- Remove stale lock: `rm /var/run/AppManager.lock`
+- Use the web API instead of CLI
+
 ### Permission Denied on Extract
 If tar shows "Permission denied" and "Cannot change mode" warnings:
 - These warnings are usually OK - files still extract
 - Verify with `ls -la` or `cat` the file
-
-### App-Manager Lock Issues
-If getting "Failed to acquire lock on file" when using app-manager CLI:
-- Use the web API instead of CLI
-- Or remove stale lock: `rm /var/run/AppManager.lock`
-
-### Configuration Overwritten on Install
-App installation may overwrite custom configuration:
-- After `app_install`, update config via API or SSH
-- Then restart the app
-
-## Important Notes
-
-1. **API Authentication**: Must use cookie-based sessions, not Bearer tokens
-2. **App ID**: Get from `app-manager --command status` output
-3. **Config Overwrites**: App installation may overwrite config - update after install
-4. **Permission Warnings**: tar warnings are usually OK
-5. **Status Format**: `{"pid": int, "AppInfo": "string"}` - pid must be integer
-6. **Always test on actual gateway hardware** - Emulation doesn't catch all issues
 
 ## Quick Reference
 
@@ -332,3 +483,5 @@ App installation may overwrite custom configuration:
 | API login | `curl -k -c cookies.txt -X POST "https://{IP}/api/login" -H "Content-Type: application/json" -d '{"username":"admin","password":"pass"}'` |
 | Stop app | `curl -k -b cookies.txt -X POST "https://{IP}/api/customApps/{ID}/stop" -H "Content-Length: 0"` |
 | Start app | `curl -k -b cookies.txt -X POST "https://{IP}/api/customApps/{ID}/start" -H "Content-Length: 0"` |
+| Enable custom apps | `curl -k -b cookies.txt -X PUT "https://{IP}/api/customAppsConfig" -H "Content-Type: application/json" -d '{"enabled":true}'` |
+| Save and apply config | `curl -k -b cookies.txt -X POST "https://{IP}/api/command/save_apply" -H "Content-Length: 0"` |

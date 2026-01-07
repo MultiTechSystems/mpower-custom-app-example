@@ -1,10 +1,115 @@
 #!/bin/bash
-# Start script for webapi-example
-# This script is called by app-manager to start the application
 
-APP_DIR="$(dirname "$0")"
-export APP_DIR
-export PYTHONPATH="${APP_DIR}/webapi_example:${PYTHONPATH}"
+# Start script for Web API Example custom application
+# This script is used by app-manager to start and stop the application
 
-cd "$APP_DIR"
-exec /usr/bin/python3 -m webapi_example -c "${APP_DIR}/config/config.json"
+NAME="webapi_example"
+DESC="Web API Example"
+DAEMON="$APP_DIR/webapi_example/main.py"
+PID="/var/run/webapi_example.pid"
+LOG_FILE="/var/log/webapi-example.log"
+
+function SetEnv {
+    echo "SetEnv"
+    
+    # Set PYTHONPATH to include our application
+    export PYTHONPATH="$APP_DIR:$PYTHONPATH"
+    
+    echo "CONFIG_DIR: $CONFIG_DIR"
+    logger -t Start "CONFIG_DIR: $CONFIG_DIR"
+    echo "APP_DIR: $APP_DIR"
+    logger -t Start "APP_DIR: $APP_DIR"
+    echo "APP_ID: $APP_ID"
+    logger -t Start "APP_ID: $APP_ID"
+}
+
+function CreateAccess {
+    echo "CreateAccess:"
+    # Create log directory if needed
+    mkdir -p /var/log
+}
+
+function ChangeUser {
+    echo "ChangeUser:"
+    # Run as root for now
+}
+
+function Execute {
+    echo "Execute:"
+    
+    # Determine config file location
+    if [ -f "$CONFIG_DIR/config.json" ]; then
+        CONFIG_ARG="-c $CONFIG_DIR/config.json"
+    elif [ -f "$APP_DIR/config/config.json" ]; then
+        CONFIG_ARG="-c $APP_DIR/config/config.json"
+    else
+        echo "No config file found"
+        logger -t Start "No config file found, using defaults"
+        CONFIG_ARG=""
+    fi
+    
+    # Start the application using Python module invocation
+    /usr/sbin/start-stop-daemon --start --background \
+        --pidfile "$PID" --make-pidfile \
+        --startas /bin/bash -- -c "cd $APP_DIR && exec python3 -m webapi_example $CONFIG_ARG >> $LOG_FILE 2>&1"
+    
+    logger -t Start "Web API Example started with config: $CONFIG_ARG"
+}
+
+function Restart {
+    echo "Restart:"
+    Stop
+    sleep 2
+    Start
+}
+
+function Stop {
+    echo "Stop:"
+    /usr/sbin/start-stop-daemon --stop -p "$PID" --retry 60
+    rm -f "$PID"
+    logger -t Start "Web API Example stopped"
+}
+
+function Start {
+    SetEnv
+    CreateAccess
+    ChangeUser
+    Execute
+}
+
+# Notify the application process that new config files are available
+function Reload {
+    echo "Reload:"
+    # Restart to pick up new configuration
+    Restart
+}
+
+case "$1" in
+    start)
+        echo -n "Starting $DESC: "
+        Start
+        echo "$NAME."
+        ;;
+    stop)
+        echo -n "Stopping $DESC: "
+        Stop
+        echo "$NAME."
+        ;;
+    restart)
+        echo -n "Restarting $DESC: "
+        Restart
+        echo "$NAME."
+        ;;
+    reload)
+        echo -n "Reloading $DESC: "
+        Reload
+        echo "$NAME."
+        ;;
+    *)
+        N=$NAME
+        echo "Usage: $N {start|stop|restart|reload}" >&2
+        exit 1
+        ;;
+esac
+
+exit 0
